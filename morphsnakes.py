@@ -325,7 +325,7 @@ def inverse_gaussian_gradient(image, alpha=100.0, sigma=5.0):
 
 
 def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
-                            smoothing=1, lambda1=1, lambda2=1,
+                            smoothing=1, lambda1=1, lambda2=1, albedo=None,
                             iter_callback=lambda x: None):
     """Morphological Active Contours without Edges (MorphACWE)
 
@@ -360,6 +360,10 @@ def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
         Weight parameter for the inner region. If `lambda2` is larger than
         `lambda1`, the inner region will contain a larger range of values than
         the outer region.
+    albedo : (M, N) array
+        Grayscale image with "albedo" information. This will be used to
+        differentiate between different set, by estimating a linear relation.
+        Instead of a constant relation for the whole group.
     iter_callback : function, optional
         If given, this function is called once per iteration with the current
         level set as the only argument. This is useful for debugging or for
@@ -408,14 +412,30 @@ def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
 
         # inside = u > 0
         # outside = u <= 0
-        c0 = (image * (1 - u)).sum() / float((1 - u).sum() + 1e-8)
-        c1 = (image * u).sum() / float(u.sum() + 1e-8)
+        if albedo is None:
+            # estimate group statistic
+            c0 = (image * (1 - u)).sum() / float((1 - u).sum() + 1e-8)
+            c1 = (image * u).sum() / float(u.sum() + 1e-8)
+        else:
+            # estimate intercept and bias
+            IN = u.astype(bool)
+            m0, b0 = np. polyfit(albedo[IN], image[IN], 1)
+
+            OUT = np.invert(IN)
+            m1, b1 = np. polyfit(albedo[OUT], image[OUT], 1)
 
         # Image attachment
         du = np.gradient(u)
         abs_du = np.abs(du).sum(0)
-        aux = abs_du * (lambda1 * (image - c1)**2 - lambda2 * (image - c0)**2)
 
+        if albedo is None:
+            aux = abs_du * (lambda1 * (image - c1)**2
+                            - lambda2 * (image - c0)**2)
+        else:
+            low = b0 + albedo*m0
+            high = b1 + albedo*m1
+            aux = abs_du * (lambda1 * (image - low)**2
+                            - lambda2 * (image - high)**2)
         u[aux < 0] = 1
         u[aux > 0] = 0
 
