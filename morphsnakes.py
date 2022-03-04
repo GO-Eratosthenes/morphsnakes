@@ -137,7 +137,7 @@ _curvop = _fcycle([lambda u: sup_inf(inf_sup(u)),   # SIoIS
                    lambda u: inf_sup(sup_inf(u))])  # ISoSI
 
 
-def _check_input(image, init_level_set):
+def _check_input(image, init_level_set, albedo=None, mask=None):
     """Check that shapes of `image` and `init_level_set` match."""
     if image.ndim not in [2, 3]:
         raise ValueError("`image` must be a 2 or 3-dimensional array.")
@@ -146,6 +146,16 @@ def _check_input(image, init_level_set):
         raise ValueError("The dimensions of the initial level set do not "
                          "match the dimensions of the image.")
 
+    if albedo is not None:
+        if len(image.shape) != len(albedo.shape):
+            raise ValueError("The dimensions of the albedo array do not "
+                             "match the dimensions of the image.")
+
+    if mask is not None:
+        if len(image.shape) != len(mask.shape):
+            raise ValueError("The dimensions of the masking array do not "
+                             "match the dimensions of the image.")
+    return
 
 def _init_level_set(init_level_set, image_shape):
     """Auxiliary function for initializing level sets with a string.
@@ -325,7 +335,8 @@ def inverse_gaussian_gradient(image, alpha=100.0, sigma=5.0):
 
 
 def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
-                            smoothing=1, lambda1=1, lambda2=1, albedo=None,
+                            smoothing=1, lambda1=1, lambda2=1,
+                            albedo=None, mask=None,
                             iter_callback=lambda x: None):
     """Morphological Active Contours without Edges (MorphACWE)
 
@@ -362,8 +373,11 @@ def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
         the outer region.
     albedo : (M, N) array
         Grayscale image with "albedo" information. This will be used to
-        differentiate between different set, by estimating a linear relation.
+        differentiate between different sets, by estimating a linear relation.
         Instead of a constant relation for the whole group.
+    mask : (M, N) array
+        A binarized array indicating which regions of the image should not be
+        used. Hence, True's indicate pixels to exclude.
     iter_callback : function, optional
         If given, this function is called once per iteration with the current
         level set as the only argument. This is useful for debugging or for
@@ -402,10 +416,14 @@ def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
 
     init_level_set = _init_level_set(init_level_set, image.shape)
 
-    _check_input(image, init_level_set)
+    if mask is None: mask = np.zeros_like(image, dtype=bool)
+    if mask.ndim<image.ndim:
+        mask = np.tile(mask, (1, 1, image.shape[2]))
+
+    _check_input(image, init_level_set, albedo, mask)
 
     u = np.int8(init_level_set > 0)
-
+    selec = np.inverse(mask.astype(bool))
     iter_callback(u)
 
     for _ in range(iterations):
@@ -414,15 +432,17 @@ def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
         # outside = u <= 0
         if albedo is None:
             # estimate group statistic
-            c0 = (image * (1 - u)).sum() / float((1 - u).sum() + 1e-8)
-            c1 = (image * u).sum() / float(u.sum() + 1e-8)
+            c0 = np.divide((image[selec] * (1 - u[selec])).sum() ,
+                           float((1 - u[selec]).sum() + 1e-8))
+            c1 = np.divide((image[selec] * u[selec]).sum(),
+                           float(u[selec].sum() + 1e-8))
         else:
             # estimate intercept and bias
-            IN = u.astype(bool)
-            m0, b0 = np. polyfit(albedo[IN], image[IN], 1)
+            zero = np.logical_and(u.astype(bool), selec)
+            m0, b0 = np. polyfit(albedo[zero], image[zero], 1)
 
-            OUT = np.invert(IN)
-            m1, b1 = np. polyfit(albedo[OUT], image[OUT], 1)
+            one = np.logical_and(np.invert(u.astype(bool), selec))
+            m1, b1 = np. polyfit(albedo[one], image[one], 1)
 
         # Image attachment
         du = np.gradient(u)
