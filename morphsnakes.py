@@ -423,7 +423,7 @@ def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
     _check_input(image, init_level_set, albedo, mask)
 
     u = np.int8(init_level_set > 0)
-    selec = np.inverse(mask.astype(bool))
+    selec = np.invert(mask.astype(bool))
     iter_callback(u)
 
     for _ in range(iterations):
