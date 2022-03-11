@@ -441,7 +441,7 @@ def morphological_chan_vese(image, iterations, init_level_set='checkerboard',
             zero = np.logical_and(u.astype(bool), selec)
             m0, b0 = np. polyfit(albedo[zero], image[zero], 1)
 
-            one = np.logical_and(np.invert(u.astype(bool), selec))
+            one = np.logical_and(np.invert(u.astype(bool)), selec)
             m1, b1 = np. polyfit(albedo[one], image[one], 1)
 
         # Image attachment
